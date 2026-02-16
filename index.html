@@ -2,443 +2,358 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Mesh P2P | Mobile Voice</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoiceLink | P2P Voice Room</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lucide/0.263.0/lucide.min.js"></script>
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@700&display=swap');
-        
+        :root {
+            --color-slate: #56536e;
+            --color-taupe: #7e6f5f;
+            --color-grey: #746f73;
+            --color-midnight: #030b19;
+            --color-cloud: #d2dce7;
+        }
+
         body {
-            font-family: 'Inter', sans-serif;
-            background-color: #050505;
-            color: #cbd5e1;
-            touch-action: manipulation;
+            background-color: var(--color-cloud);
+            color: var(--color-midnight);
         }
 
-        .font-mono { font-family: 'JetBrains Mono', monospace; }
-
-        /* Mobile specific heights to handle safe areas */
-        .h-screen-safe { height: 100vh; height: 100dvh; }
-
-        /* Animation for active voice */
-        .status-pulse { animation: pulse-custom 2s infinite; }
-        @keyframes pulse-custom {
+        .visualizer-container {
+            height: 48px;
+            display: flex;
+            align-items: center;
+            gap: 2px;
+        }
+        .bar {
+            flex: 1;
+            background: var(--color-slate);
+            min-height: 2px;
+            border-radius: 1px;
+            transition: height 0.1s ease;
+        }
+        .remote-bar { background: var(--color-taupe); }
+        
+        @keyframes pulse {
             0%, 100% { opacity: 1; transform: scale(1); }
-            50% { opacity: 0.5; transform: scale(1.1); }
+            50% { opacity: 0.6; transform: scale(0.98); }
         }
+        .anim-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
 
-        /* Sidebar transition */
-        #sidebar {
-            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        /* Smooth scroll for chat */
-        #chat-window {
-            scroll-behavior: smooth;
-            -webkit-overflow-scrolling: touch;
-        }
-
-        .voice-active-glow {
-            box-shadow: 0 0 20px rgba(16, 185, 129, 0.1);
-            border-color: rgba(16, 185, 129, 0.3) !important;
+        .user-tag {
+            background: white;
+            border: 1px solid rgba(86, 83, 110, 0.15);
+            padding: 8px 12px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.8rem;
+            font-weight: 600;
         }
     </style>
 </head>
-<body class="h-screen-safe overflow-hidden flex flex-col">
+<body class="min-h-screen font-sans flex items-center justify-center p-4">
 
-    <!-- Header -->
-    <header class="h-14 border-b border-white/5 bg-[#0a0a0a] flex items-center justify-between px-4 z-40 shrink-0">
-        <div class="flex items-center gap-3">
-            <button onclick="toggleSidebar()" class="p-2 md:hidden text-slate-400">
-                <i data-lucide="menu" class="w-5 h-5"></i>
-            </button>
-            <div class="hidden sm:flex p-1.5 bg-indigo-600 rounded-lg shadow-lg">
-                <i data-lucide="tree-pine" class="text-white w-4 h-4"></i>
-            </div>
-            <h1 class="font-bold text-white tracking-tighter text-sm uppercase">Mesh</h1>
-        </div>
-        
-        <div id="connection-badge" class="flex items-center gap-2 text-[9px] font-bold text-slate-500 bg-white/5 px-3 py-1.5 rounded-full border border-white/5">
-            <div id="status-dot" class="w-1.5 h-1.5 rounded-full bg-slate-600"></div>
-            <span id="status-text" class="hidden xs:inline">DISCONNECTED</span>
-            <span id="peer-count" class="xs:hidden">0P</span>
+    <div class="max-w-sm w-full bg-white rounded-[2.5rem] shadow-[0_20px_50px_rgba(3,11,25,0.15)] border border-[#56536e]/10 overflow-hidden">
+        <!-- Header -->
+        <div class="p-8 pb-4 text-center">
+            <h1 class="text-3xl font-black text-[#030b19] tracking-tight">VoiceLink</h1>
+            <p class="text-[#746f73] text-sm font-medium mt-1">Private Audio Connectivity</p>
         </div>
 
-        <button onclick="openModal('profile')" class="p-2 text-slate-500 hover:text-white transition-colors">
-            <i data-lucide="settings" class="w-5 h-5"></i>
-        </button>
-    </header>
+        <!-- Visualizers -->
+        <div class="px-8 py-4 flex items-center justify-around bg-[#d2dce7]/30 border-y border-[#56536e]/10">
+            <div class="text-center">
+                <p class="text-[9px] font-black text-[#746f73] uppercase tracking-widest mb-2">My Mic</p>
+                <div id="localVisualizer" class="visualizer-container w-24 px-1"></div>
+            </div>
+            <div class="h-10 w-px bg-[#56536e]/20"></div>
+            <div class="text-center">
+                <p class="text-[9px] font-black text-[#746f73] uppercase tracking-widest mb-2">Peer Audio</p>
+                <div id="remoteVisualizer" class="visualizer-container w-24 px-1"></div>
+            </div>
+        </div>
 
-    <div class="flex-1 flex overflow-hidden relative">
-        <!-- Sidebar Overlay (Mobile Only) -->
-        <div id="sidebar-overlay" onclick="toggleSidebar()" class="fixed inset-0 bg-black/60 z-30 opacity-0 pointer-events-none transition-opacity duration-300 md:hidden"></div>
+        <!-- Main Content -->
+        <div class="p-8 space-y-6">
+            <!-- Connection State -->
+            <div id="statusContainer" class="text-center">
+                <span id="statusBadge" class="px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-[#d2dce7] text-[#56536e]">
+                    Offline
+                </span>
+            </div>
 
-        <!-- Sidebar -->
-        <aside id="sidebar" class="fixed inset-y-0 left-0 w-72 bg-[#0a0a0a] border-r border-white/5 flex flex-col z-40 -translate-x-full md:translate-x-0 md:static shrink-0">
-            <!-- Voice Control Center -->
-            <div class="p-4">
-                <div id="voice-panel" class="bg-white/5 border border-white/5 rounded-2xl p-4">
-                    <div class="flex items-center justify-between mb-4">
-                        <div class="flex items-center gap-2">
-                            <i data-lucide="radio" id="voice-icon" class="w-3.5 h-3.5 text-slate-500"></i>
-                            <span class="text-[10px] font-black uppercase tracking-widest text-slate-500">Audio</span>
-                        </div>
-                        <button id="mic-toggle" onclick="toggleMic()" class="p-2.5 rounded-xl bg-slate-800 text-slate-400 hover:bg-slate-700 active:scale-90 transition-all">
-                            <i data-lucide="mic-off" class="w-4 h-4"></i>
-                        </button>
-                    </div>
-                    <div id="speaker-list" class="space-y-2">
-                        <p class="text-[9px] text-slate-600 text-center italic">Mic muted</p>
-                    </div>
+            <!-- Setup View -->
+            <div id="setupView" class="space-y-5">
+                <div class="space-y-2">
+                    <p class="text-[10px] font-bold text-[#746f73] uppercase tracking-widest px-1">Your Name</p>
+                    <input type="text" id="usernameInput" maxlength="15" class="w-full p-4 bg-[#d2dce7]/20 border border-[#56536e]/20 rounded-2xl text-lg font-bold text-[#030b19] focus:ring-4 focus:ring-[#56536e]/10 focus:border-[#56536e] outline-none transition-all" placeholder="e.g. Alex">
                 </div>
-            </div>
 
-            <!-- Branch Navigation -->
-            <div class="flex-1 overflow-y-auto px-4">
-                <div class="px-2 mb-2 flex items-center justify-between text-[10px] uppercase tracking-widest font-black text-slate-600">
-                    <span>Branches</span>
-                    <button onclick="createNewBranch()" class="p-1 hover:text-indigo-400"><i data-lucide="plus" class="w-4 h-4"></i></button>
+                <div class="space-y-2">
+                    <p class="text-[10px] font-bold text-[#746f73] uppercase tracking-widest px-1">Room Name</p>
+                    <input type="text" id="roomInput" class="w-full p-4 bg-[#d2dce7]/20 border border-[#56536e]/20 rounded-2xl text-lg font-mono font-bold text-[#030b19] focus:ring-4 focus:ring-[#56536e]/10 focus:border-[#56536e] outline-none transition-all" placeholder="e.g. boardroom">
                 </div>
-                <div id="room-list" class="space-y-1"></div>
-            </div>
 
-            <!-- Sidebar Actions -->
-            <div class="p-4 space-y-2 border-t border-white/5">
-                <button onclick="hostVoiceChat()" class="w-full py-4 bg-emerald-600 active:bg-emerald-700 text-white rounded-xl text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/20">
-                    <i data-lucide="mic" class="w-4 h-4"></i> Host Voice
-                </button>
-                <div class="grid grid-cols-2 gap-2">
-                    <button onclick="startHosting()" class="py-3 bg-white/5 active:bg-white/10 text-slate-300 rounded-xl text-[10px] font-bold">Host Text</button>
-                    <button onclick="openModal('join')" class="py-3 bg-indigo-600 active:bg-indigo-700 text-white rounded-xl text-[10px] font-bold">Join Mesh</button>
-                </div>
-            </div>
-        </aside>
-
-        <!-- Main Chat Area -->
-        <main class="flex-1 flex flex-col bg-[#050505] relative min-w-0">
-            <!-- Room Info Bar -->
-            <div class="h-10 border-b border-white/5 flex items-center px-4 md:px-8 bg-[#070707]/50 backdrop-blur-sm shrink-0">
-                <i data-lucide="hash" class="w-3 h-3 text-indigo-500 mr-2"></i>
-                <span id="header-room-name" class="text-[10px] font-bold text-white uppercase tracking-wider truncate">Global Root</span>
-            </div>
-
-            <!-- Messages List -->
-            <div id="chat-window" class="flex-1 overflow-y-auto p-4 md:p-8 space-y-4">
-                <div id="empty-prompt" class="h-full flex flex-col items-center justify-center opacity-20 text-center px-4 pointer-events-none">
-                    <i data-lucide="network" class="w-12 h-12 mb-4 text-indigo-500"></i>
-                    <p class="text-sm font-black uppercase">Mesh Offline</p>
-                    <p class="text-[9px] uppercase tracking-widest mt-1">Connect to bridge peers</p>
-                </div>
-            </div>
-
-            <!-- Input Bar -->
-            <footer class="p-4 bg-[#050505] border-t border-white/5">
-                <div class="max-w-4xl mx-auto flex gap-2 bg-[#0f0f0f] border border-white/10 rounded-2xl p-1 shadow-2xl">
-                    <input id="message-input" type="text" placeholder="Message..." class="flex-1 bg-transparent border-none px-4 text-sm focus:ring-0 text-slate-100 placeholder:text-slate-600 outline-none">
-                    <button onclick="handleSendMessage()" class="p-3 bg-indigo-600 text-white rounded-xl active:scale-95 transition-all shadow-lg">
-                        <i data-lucide="send" class="w-4 h-4"></i>
+                <div class="grid grid-cols-2 gap-3 pt-2">
+                    <button id="btnHost" class="bg-[#030b19] hover:bg-black text-[#d2dce7] font-bold h-24 rounded-2xl transition shadow-lg flex flex-col items-center justify-center gap-2">
+                        <i data-lucide="crown" class="w-5 h-5"></i>
+                        <span class="text-xs uppercase tracking-widest">Host</span>
+                    </button>
+                    <button id="btnJoin" class="bg-[#56536e] hover:bg-[#746f73] text-[#d2dce7] font-bold h-24 rounded-2xl transition shadow-lg flex flex-col items-center justify-center gap-2">
+                        <i data-lucide="users" class="w-5 h-5"></i>
+                        <span class="text-xs uppercase tracking-widest">Join</span>
                     </button>
                 </div>
-            </footer>
-        </main>
-    </div>
+            </div>
 
-    <!-- Modals -->
-    <div id="modal-backdrop" class="fixed inset-0 z-[100] bg-black/90 backdrop-blur-md hidden flex items-end sm:items-center justify-center">
-        <div id="modal-container" class="bg-[#0f0f0f] border-t sm:border border-white/10 rounded-t-[2.5rem] sm:rounded-[2.5rem] w-full max-w-sm p-8 sm:p-10 relative shadow-2xl transform translate-y-full sm:translate-y-0 transition-transform duration-300">
-            <button onclick="closeModal()" class="absolute top-6 right-6 text-slate-500 p-2"><i data-lucide="x" class="w-6 h-6"></i></button>
-            <div id="modal-content" class="text-center space-y-6 pb-8 sm:pb-0"></div>
+            <!-- Active View -->
+            <div id="activeView" class="hidden space-y-6">
+                <div class="p-4 bg-[#d2dce7]/30 border border-[#56536e]/20 rounded-2xl space-y-3">
+                    <div class="flex items-center justify-between">
+                        <p class="text-[9px] font-black text-[#56536e] uppercase tracking-widest">Active Room: <span id="displayRoomName" class="text-[#030b19] ml-1">----</span></p>
+                        <div id="statusDot" class="w-3 h-3 rounded-full bg-[#746f73]"></div>
+                    </div>
+                    
+                    <!-- User List -->
+                    <div class="space-y-2">
+                        <p class="text-[8px] font-bold text-[#746f73] uppercase tracking-widest">Users in Room</p>
+                        <div id="userList" class="space-y-2">
+                            <div class="user-tag">
+                                <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                                <span id="localUserNameDisplay" class="truncate">Me</span>
+                                <span class="text-[8px] ml-auto text-[#746f73] bg-[#d2dce7] px-1.5 py-0.5 rounded">YOU</span>
+                            </div>
+                            <div id="remoteUserTag" class="user-tag opacity-40 italic">
+                                <span class="w-2 h-2 rounded-full bg-[#746f73]"></span>
+                                <span id="remoteUserNameDisplay">Waiting...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <button id="btnLeave" class="w-full bg-[#d2dce7]/50 text-[#030b19] hover:bg-red-50 hover:text-red-700 border border-[#56536e]/20 font-bold py-4 rounded-2xl transition flex items-center justify-center gap-2 text-center">
+                    <i data-lucide="log-out" class="w-5 h-5"></i> Leave Room
+                </button>
+            </div>
+        </div>
+
+        <div class="px-8 pb-8 text-center">
+            <p class="text-[9px] font-bold text-[#746f73] uppercase tracking-widest">P2P PeerJS • Static Multi-User Sync</p>
         </div>
     </div>
 
+    <audio id="remoteAudio" autoplay></audio>
+
     <script>
-        // --- Core State ---
-        let username = localStorage.getItem('mesh_username') || `User_${Math.random().toString(36).substr(2, 3)}`;
-        let myId = localStorage.getItem('mesh_userId') || Math.random().toString(36).substr(2, 9);
-        localStorage.setItem('mesh_userId', myId);
+        window.addEventListener('load', function() {
+            const refreshIcons = () => { if (window.lucide) window.lucide.createIcons(); };
+            refreshIcons();
 
-        let rooms = JSON.parse(localStorage.getItem('mesh_rooms')) || [{ id: 'root', name: 'Global Root', path: ['Global Root'], parent: null }];
-        let currentRoomId = 'root';
-        let messages = [];
-        let peers = [];
-        let pc = null;
-        let localStream = null;
-        let isMicEnabled = false;
-        let pollTimer = null;
+            const statusBadge = document.getElementById('statusBadge');
+            const roomInput = document.getElementById('roomInput');
+            const usernameInput = document.getElementById('usernameInput');
+            const displayRoomName = document.getElementById('displayRoomName');
+            const setupView = document.getElementById('setupView');
+            const activeView = document.getElementById('activeView');
+            const remoteAudio = document.getElementById('remoteAudio');
+            const statusDot = document.getElementById('statusDot');
+            const localUserNameDisplay = document.getElementById('localUserNameDisplay');
+            const remoteUserNameDisplay = document.getElementById('remoteUserNameDisplay');
+            const remoteUserTag = document.getElementById('remoteUserTag');
 
-        // --- View Logic ---
-        function toggleSidebar() {
-            const sidebar = document.getElementById('sidebar');
-            const overlay = document.getElementById('sidebar-overlay');
-            const isOpen = sidebar.style.transform === 'translateX(0px)';
+            let peer = null;
+            let localStream = null;
+            let currentCall = null;
+            let dataConn = null;
+            let roomName = "";
+            let userName = "";
+            let userRole = ""; 
+            let heartbeatInterval = null;
 
-            if (isOpen) {
-                sidebar.style.transform = 'translateX(-100%)';
-                overlay.style.opacity = '0';
-                overlay.style.pointerEvents = 'none';
-            } else {
-                sidebar.style.transform = 'translateX(0px)';
-                overlay.style.opacity = '1';
-                overlay.style.pointerEvents = 'auto';
-            }
-        }
-
-        function switchRoom(id) {
-            currentRoomId = id;
-            const room = rooms.find(r => r.id === id);
-            document.getElementById('header-room-name').innerText = room.name;
-            if (window.innerWidth < 768) toggleSidebar();
-            renderRooms();
-            renderMessages();
-        }
-
-        // --- Voice Logic ---
-        async function hostVoiceChat() {
-            try {
-                await toggleMic(true);
-                startHosting();
-            } catch (e) { console.error(e); }
-        }
-
-        async function toggleMic(forceOn = false) {
-            const btn = document.getElementById('mic-toggle');
-            const icon = document.getElementById('voice-icon');
-            const panel = document.getElementById('voice-panel');
-            const list = document.getElementById('speaker-list');
-
-            if (isMicEnabled && !forceOn) {
-                localStream?.getTracks().forEach(t => t.stop());
-                localStream = null;
-                isMicEnabled = false;
-                btn.className = 'p-2.5 rounded-xl bg-slate-800 text-slate-400';
-                btn.innerHTML = '<i data-lucide="mic-off" class="w-4 h-4"></i>';
-                icon.className = 'w-3.5 h-3.5 text-slate-500';
-                panel.classList.remove('voice-active-glow');
-                list.innerHTML = `<p class="text-[9px] text-slate-600 text-center italic">Mic muted</p>`;
-                if (pc) pc.getSenders().forEach(s => s.track?.kind === 'audio' && pc.removeTrack(s));
-            } else {
+            async function getMedia() {
+                if (localStream) return localStream;
                 try {
                     localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    isMicEnabled = true;
-                    btn.className = 'p-2.5 rounded-xl bg-emerald-600 text-white shadow-lg';
-                    btn.innerHTML = '<i data-lucide="mic" class="w-4 h-4"></i>';
-                    icon.className = 'w-3.5 h-3.5 text-emerald-400 animate-pulse';
-                    panel.classList.add('voice-active-glow');
-                    list.innerHTML = `<div class="flex items-center gap-2 bg-emerald-500/10 p-2 rounded-xl border border-emerald-500/20"><div class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></div><span class="text-[9px] font-bold text-emerald-400 uppercase">You are live</span></div>`;
-                    if (pc) localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
-                } catch (e) { alert("Mic access denied."); throw e; }
-            }
-            lucide.createIcons();
-        }
-
-        // --- P2P Logic ---
-        async function relay(code, data) {
-            await fetch(`https://kv.val.run/mesh-m-${code}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).catch(()=>{});
-        }
-
-        async function fetchRelay(code) {
-            const r = await fetch(`https://kv.val.run/mesh-m-${code}`).catch(() => null);
-            return r && r.ok ? r.json() : null;
-        }
-
-        function createPC() {
-            if (pc) pc.close();
-            pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-            pc.ontrack = (e) => {
-                const audio = new Audio(); audio.srcObject = e.streams[0]; audio.play();
-                updateSpeakerUI(true);
-            };
-            return pc;
-        }
-
-        async function startHosting() {
-            openModal('loading');
-            const code = Math.floor(100000 + Math.random() * 900000).toString();
-            const webpc = createPC();
-            const dc = webpc.createDataChannel("mesh");
-            setupDC(dc);
-
-            if (localStream) localStream.getTracks().forEach(t => webpc.addTrack(t, localStream));
-            webpc.onicecandidate = (e) => { if (!e.candidate) relay(code, { type: 'offer', sdp: webpc.localDescription, name: username }); };
-            
-            const offer = await webpc.createOffer();
-            await webpc.setLocalDescription(offer);
-            renderInviteUI(code);
-
-            pollTimer = setInterval(async () => {
-                const data = await fetchRelay(`${code}-ans`);
-                if (data && webpc.signalingState === 'have-local-offer') {
-                    clearInterval(pollTimer);
-                    await webpc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                    visualize(localStream, 'localVisualizer');
+                    return localStream;
+                } catch (err) {
+                    alert("Microphone access is required.");
+                    throw err;
                 }
-            }, 2500);
-        }
+            }
 
-        async function joinMesh(code) {
-            if (code.length < 6) return;
-            openModal('loading');
-            const data = await fetchRelay(code);
-            if (!data) return alert("Code not found.");
-
-            const webpc = createPC();
-            webpc.ondatachannel = (e) => setupDC(e.channel);
-            if (localStream) localStream.getTracks().forEach(t => webpc.addTrack(t, localStream));
-
-            await webpc.setRemoteDescription(new RTCSessionDescription(data.sdp));
-            const ans = await webpc.createAnswer();
-            await webpc.setLocalDescription(ans);
-            webpc.onicecandidate = (e) => { if (!e.candidate) relay(`${code}-ans`, { type: 'answer', sdp: webpc.localDescription }); };
-        }
-
-        function setupDC(dc) {
-            dc.onopen = () => {
-                peers.push({ dc });
-                updateStatusUI();
-                closeModal();
-                dc.send(JSON.stringify({ type: 'sync', rooms, name: username }));
-            };
-            dc.onclose = () => { peers = peers.filter(p => p.dc !== dc); updateStatusUI(); updateSpeakerUI(false); };
-            dc.onmessage = (e) => {
-                const data = JSON.parse(e.data);
-                if (data.type === 'chat') { messages.push(data); renderMessages(); }
-                if (data.type === 'sync' || data.type === 'new-room') {
-                    const incoming = data.type === 'sync' ? data.rooms : [data.room];
-                    const existing = new Set(rooms.map(r => r.id));
-                    const fresh = incoming.filter(r => !existing.has(r.id));
-                    if (fresh.length > 0) {
-                        rooms = [...rooms, ...fresh];
-                        localStorage.setItem('mesh_rooms', JSON.stringify(rooms));
-                        renderRooms();
+            function updateConnectionUI(connected, peerName = null) {
+                if (connected) {
+                    statusDot.className = "w-3 h-3 rounded-full bg-[#56536e] anim-pulse shadow-[0_0_8px_rgba(86,83,110,0.4)]";
+                    statusBadge.innerText = "Live";
+                    statusBadge.className = "px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-[#56536e]/10 text-[#56536e]";
+                    if (peerName) {
+                        remoteUserNameDisplay.innerText = peerName;
+                        remoteUserTag.className = "user-tag";
+                        remoteUserTag.querySelector('span').className = "w-2 h-2 rounded-full bg-[#56536e]";
                     }
+                } else {
+                    statusDot.className = "w-3 h-3 rounded-full bg-[#746f73]";
+                    statusBadge.innerText = "Ready";
+                    statusBadge.className = "px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest bg-[#d2dce7] text-[#56536e]";
+                    remoteUserNameDisplay.innerText = "Waiting...";
+                    remoteUserTag.className = "user-tag opacity-40 italic";
+                    remoteUserTag.querySelector('span').className = "w-2 h-2 rounded-full bg-[#746f73]";
                 }
+            }
+
+            function setupDataConnection(conn) {
+                dataConn = conn;
+                
+                // When connected, send our name
+                dataConn.on('open', () => {
+                    dataConn.send({ type: 'HANDSHAKE', name: userName });
+                });
+
+                dataConn.on('data', (data) => {
+                    if (data.type === 'HANDSHAKE') {
+                        updateConnectionUI(true, data.name);
+                    }
+                });
+
+                dataConn.on('close', () => {
+                    updateConnectionUI(false);
+                    dataConn = null;
+                });
+            }
+
+            function handleCall(call) {
+                if (currentCall) currentCall.close();
+                currentCall = call;
+
+                call.on('stream', (stream) => {
+                    remoteAudio.srcObject = stream;
+                    remoteAudio.play().catch(() => {});
+                    visualize(stream, 'remoteVisualizer');
+                    // We don't update name yet, that comes via Data Channel
+                });
+
+                const cleanup = () => {
+                    if (currentCall === call) {
+                        currentCall = null;
+                        updateConnectionUI(false);
+                        const bars = document.querySelectorAll('#remoteVisualizer .bar');
+                        bars.forEach(b => b.style.height = '2px');
+                    }
+                };
+
+                call.on('close', cleanup);
+                call.on('error', cleanup);
+            }
+
+            async function startSession(roleType) {
+                roomName = roomInput.value.trim().toLowerCase();
+                userName = usernameInput.value.trim() || "Anonymous";
+                
+                if (!roomName) return alert("Please enter a room name.");
+
+                userRole = roleType;
+                const peerId = `${roomName}-${userRole}`;
+                
+                setupView.classList.add('hidden');
+                activeView.classList.remove('hidden');
+                displayRoomName.innerText = roomName;
+                localUserNameDisplay.innerText = userName;
+
+                peer = new Peer(peerId);
+
+                peer.on('open', () => {
+                    updateConnectionUI(false);
+                    if (userRole === 'join') {
+                        heartbeatInterval = setInterval(async () => {
+                            if (!currentCall && peer && !peer.destroyed) {
+                                try {
+                                    const stream = await getMedia();
+                                    const call = peer.call(`${roomName}-host`, stream);
+                                    if (call) handleCall(call);
+                                    
+                                    // Also initiate data connection for name sync
+                                    if (!dataConn) {
+                                        const conn = peer.connect(`${roomName}-host`);
+                                        setupDataConnection(conn);
+                                    }
+                                } catch (e) {}
+                            }
+                        }, 3000);
+                    }
+                });
+
+                // Listen for Data Connections (Incoming)
+                peer.on('connection', (conn) => {
+                    setupDataConnection(conn);
+                });
+
+                // Listen for Calls (Incoming)
+                peer.on('call', async (call) => {
+                    try {
+                        const stream = await getMedia();
+                        call.answer(stream);
+                        handleCall(call);
+                    } catch (e) {
+                        console.error("Answer failed", e);
+                    }
+                });
+
+                peer.on('error', (err) => {
+                    if (err.type === 'id-taken') {
+                        alert(`A ${userRole} is already in this room.`);
+                        location.reload();
+                    }
+                });
+            }
+
+            document.getElementById('btnHost').onclick = () => startSession('host');
+            document.getElementById('btnJoin').onclick = () => startSession('join');
+
+            document.getElementById('btnLeave').onclick = () => {
+                if (heartbeatInterval) clearInterval(heartbeatInterval);
+                if (peer) peer.destroy();
+                location.reload();
             };
-        }
 
-        // --- Message Handling ---
-        function handleSendMessage() {
-            const input = document.getElementById('message-input');
-            const text = input.value.trim();
-            if (!text) return;
-            const msg = { type: 'chat', senderId: myId, senderName: username, text, roomId: currentRoomId, timestamp: Date.now() };
-            messages.push(msg);
-            peers.forEach(p => p.dc.readyState === 'open' && p.dc.send(JSON.stringify(msg)));
-            input.value = '';
-            renderMessages();
-        }
-
-        // --- UI Updates ---
-        function renderMessages() {
-            const chat = document.getElementById('chat-window');
-            const filtered = messages.filter(m => m.roomId === currentRoomId);
-            if (filtered.length === 0 && peers.length === 0) {
-                chat.innerHTML = `<div class="h-full flex flex-col items-center justify-center opacity-20 text-center"><i data-lucide="network" class="w-12 h-12 mb-4"></i><p class="text-xs font-black uppercase tracking-widest">Mesh Idle</p></div>`;
-            } else {
-                chat.innerHTML = filtered.map(msg => {
-                    const isMe = msg.senderId === myId;
-                    return `<div class="flex flex-col ${isMe ? 'items-end' : 'items-start'}"><span class="text-[8px] text-slate-600 mb-1 px-1 uppercase font-bold">${isMe ? 'You' : msg.senderName}</span><div class="px-4 py-2.5 rounded-2xl text-sm max-w-[88%] ${isMe ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-[#1a1a1a] text-slate-200 rounded-tl-none border border-white/5'}">${msg.text}</div></div>`;
-                }).join('');
-                chat.scrollTop = chat.scrollHeight;
+            function createBars(container) {
+                for (let i = 0; i < 15; i++) {
+                    const bar = document.createElement('div');
+                    bar.className = 'bar' + (container.id === 'remoteVisualizer' ? ' remote-bar' : '');
+                    container.appendChild(bar);
+                }
             }
-            lucide.createIcons();
-        }
+            createBars(document.getElementById('localVisualizer'));
+            createBars(document.getElementById('remoteVisualizer'));
 
-        function renderRooms() {
-            const list = document.getElementById('room-list');
-            list.innerHTML = rooms.map(room => {
-                const depth = room.path.length - 1;
-                return `<button onclick="switchRoom('${room.id}')" style="margin-left: ${depth * 12}px" class="w-[calc(100%-${depth * 12}px)] text-left p-3 flex items-center gap-3 rounded-xl text-xs transition-all ${currentRoomId === room.id ? 'bg-indigo-500/10 text-indigo-400 font-bold' : 'text-slate-500'}"><i data-lucide="${room.parent ? 'chevron-right' : 'globe'}" class="w-3.5 h-3.5 ${room.parent ? 'opacity-30' : ''}"></i><span class="truncate">${room.name}</span></button>`;
-            }).join('');
-            lucide.createIcons();
-        }
-
-        function updateStatusUI() {
-            const dot = document.getElementById('status-dot');
-            const text = document.getElementById('status-text');
-            const count = document.getElementById('peer-count');
-            if (peers.length > 0) {
-                dot.className = 'w-1.5 h-1.5 rounded-full bg-emerald-500 status-pulse';
-                text.innerText = `${peers.length} PEERS CONNECTED`;
-                count.innerText = `${peers.length}P`;
-            } else {
-                dot.className = 'w-1.5 h-1.5 rounded-full bg-slate-600';
-                text.innerText = 'DISCONNECTED';
-                count.innerText = '0P';
+            async function visualize(stream, containerId) {
+                try {
+                    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                    if (ctx.state === 'suspended') await ctx.resume();
+                    const source = ctx.createMediaStreamSource(stream);
+                    const analyser = ctx.createAnalyser();
+                    analyser.fftSize = 64;
+                    source.connect(analyser);
+                    const data = new Uint8Array(analyser.frequencyBinCount);
+                    const bars = document.querySelectorAll(`#${containerId} .bar`);
+                    const update = () => {
+                        if (ctx.state === 'closed') return;
+                        analyser.getByteFrequencyData(data);
+                        for (let i = 0; i < bars.length; i++) {
+                            if (bars[i]) {
+                                bars[i].style.height = `${Math.max(2, (data[i] / 255) * 40)}px`;
+                            }
+                        }
+                        requestAnimationFrame(update);
+                    };
+                    update();
+                } catch (e) {}
             }
-        }
-
-        function updateSpeakerUI(isActive) {
-            const list = document.getElementById('speaker-list');
-            if (!isMicEnabled && !isActive) {
-                list.innerHTML = `<p class="text-[9px] text-slate-600 text-center italic">Mic muted</p>`;
-            } else if (isActive) {
-                list.innerHTML = `<div class="flex items-center gap-2 bg-indigo-500/10 p-2 rounded-xl border border-indigo-500/20"><div class="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce"></div><span class="text-[9px] font-bold text-indigo-400 uppercase">Remote Speaking</span></div>`;
-            } else if (isMicEnabled) {
-                list.innerHTML = `<div class="flex items-center gap-2 bg-emerald-500/10 p-2 rounded-xl border border-emerald-500/20"><div class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></div><span class="text-[9px] font-bold text-emerald-400 uppercase">You are live</span></div>`;
-            }
-            lucide.createIcons();
-        }
-
-        // --- Modals ---
-        function openModal(type) {
-            const backdrop = document.getElementById('modal-backdrop');
-            const container = document.getElementById('modal-container');
-            const content = document.getElementById('modal-content');
-            backdrop.classList.remove('hidden');
-            setTimeout(() => container.style.transform = 'translateY(0)', 10);
-
-            if (type === 'profile') {
-                content.innerHTML = `<div class="w-16 h-16 bg-white/5 rounded-3xl flex items-center justify-center mx-auto text-indigo-500"><i data-lucide="user"></i></div><h2 class="text-xl font-black text-white">Identity</h2><input id="name-input" value="${username}" class="w-full bg-black border border-white/10 rounded-2xl px-5 py-4 text-white text-center focus:border-indigo-500 outline-none"><button onclick="saveProfile()" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold">Save</button>`;
-            } else if (type === 'join') {
-                content.innerHTML = `<div class="w-16 h-16 bg-indigo-600/10 rounded-3xl flex items-center justify-center mx-auto text-indigo-500"><i data-lucide="shield-check"></i></div><h2 class="text-xl font-black text-white">Join Mesh</h2><input id="join-input" type="number" placeholder="000000" class="w-full bg-black border border-white/10 rounded-3xl px-4 py-6 text-center text-4xl font-mono tracking-widest text-white focus:border-indigo-500 outline-none"><button onclick="joinMesh(document.getElementById('join-input').value)" class="w-full py-5 bg-indigo-600 text-white rounded-3xl font-bold">Connect</button>`;
-            } else if (type === 'loading') {
-                content.innerHTML = `<div class="py-12"><i data-lucide="loader-2" class="w-10 h-10 text-indigo-500 animate-spin mx-auto"></i><p class="mt-4 text-slate-500 font-bold uppercase tracking-widest text-[9px]">Handshaking...</p></div>`;
-            }
-            lucide.createIcons();
-        }
-
-        function renderInviteUI(code) {
-            const content = document.getElementById('modal-content');
-            content.innerHTML = `<div class="w-16 h-16 bg-indigo-600/10 rounded-3xl flex items-center justify-center mx-auto text-indigo-500"><i data-lucide="key"></i></div><h2 class="text-xl font-black text-white">Share Code</h2><div onclick="copyCode('${code}')" class="text-5xl font-black tracking-widest text-indigo-400 py-8 font-mono bg-black rounded-3xl border border-white/5 cursor-pointer relative">${code}<div id="copy-status" class="absolute bottom-2 right-4 text-[9px] font-bold text-slate-600 uppercase">Tap to Copy</div></div><p class="text-xs text-slate-500">Wait for your peer to enter this code.</p>`;
-            lucide.createIcons();
-        }
-
-        function saveProfile() { username = document.getElementById('name-input').value; localStorage.setItem('mesh_username', username); closeModal(); }
-        
-        function closeModal() {
-            const backdrop = document.getElementById('modal-backdrop');
-            const container = document.getElementById('modal-container');
-            container.style.transform = window.innerWidth < 640 ? 'translateY(100%)' : 'translateY(0)';
-            setTimeout(() => backdrop.classList.add('hidden'), 300);
-            if (pollTimer) clearInterval(pollTimer);
-        }
-
-        function copyCode(code) {
-            const ta = document.createElement('textarea'); ta.value = code; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
-            document.getElementById('copy-status').innerText = 'COPIED!';
-            setTimeout(() => document.getElementById('copy-status').innerText = 'Tap to Copy', 2000);
-        }
-
-        function createNewBranch() {
-            const name = prompt("Branch Name:");
-            if (!name) return;
-            const current = rooms.find(r => r.id === currentRoomId);
-            const nr = { id: Math.random().toString(36).substr(2, 7), name, parent: currentRoomId, path: [...current.path, name] };
-            rooms.push(nr);
-            localStorage.setItem('mesh_rooms', JSON.stringify(rooms));
-            peers.forEach(p => p.dc.send(JSON.stringify({ type: 'new-room', room: nr })));
-            renderRooms();
-            switchRoom(nr.id);
-        }
-
-        window.onload = () => {
-            renderRooms();
-            updateStatusUI();
-            renderMessages();
-            lucide.createIcons();
-            document.getElementById('message-input').addEventListener('keydown', e => { if (e.key === 'Enter') handleSendMessage(); });
-        };
+        });
     </script>
 </body>
 </html>
-
