@@ -167,8 +167,8 @@
                 </div>
 
                 <div id="join-buttons-container" class="space-y-4 w-full px-12">
-                    <button onclick="handleHost()" class="w-full m3-btn-filled">Open Frequency</button>
-                    <button onclick="showJoinInput()" class="w-full m3-btn-outlined">Secure Connect</button>
+                    <button onclick="handleHost()" class="w-full m3-btn-filled">Host</button>
+                    <button onclick="showJoinInput()" class="w-full m3-btn-outlined">Connect</button>
                     <button id="close-settings-btn" onclick="toggleSetupModalFromLobby()" class="hidden w-full m3-btn-tonal mt-4">Return to Channel</button>
                 </div>
 
@@ -586,6 +586,63 @@
             d.innerHTML = `<div class="w-2 h-2 rounded-full ${t === 'success' ? 'bg-green-500' : 'bg-red-500'}"></div> ${m.toUpperCase()}`;
             c.appendChild(d);
             setTimeout(() => { d.style.opacity = '0'; setTimeout(() => d.remove(), 300); }, 3000);
+        }
+
+        //Chat System
+        // --- Chat & UI Functions ---
+
+        function sendTextMessage() {
+            const input = document.getElementById('chat-input');
+            const text = input.value.trim();
+            if (!text) return;
+
+            // Broadcast to all peers in the mesh
+            Object.values(connectedPeers).forEach(p => {
+                if (p.conn && p.conn.open) {
+                    p.conn.send({ type: 'chat', text: text });
+                }
+            });
+
+            addChatMessage('You', text, 'self');
+            input.value = '';
+        }
+
+        function handleKeyPress(e) {
+            if (e.key === 'Enter') sendTextMessage();
+        }
+
+        function addChatMessage(sender, text, type) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${type}`;
+            
+            const senderDiv = document.createElement('div');
+            senderDiv.className = 'message-sender';
+            senderDiv.textContent = sender;
+            
+            const textDiv = document.createElement('div');
+            textDiv.textContent = text;
+
+            msgDiv.appendChild(senderDiv);
+            msgDiv.appendChild(textDiv);
+
+            const container = document.getElementById('messages-ui');
+            container.appendChild(msgDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function addSystemMessage(text) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'message system';
+            msgDiv.textContent = text;
+            const container = document.getElementById('messages-ui');
+            container.appendChild(msgDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+        function showChatScreen(roomName) {
+            document.getElementById('setup-screen').style.display = 'none';
+            document.getElementById('chat-screen').style.display = 'block';
+            document.getElementById('display-room-name').textContent = `Room: ${roomName}`;
+            document.getElementById('display-username').textContent = `Playing as ${myUsername}`;
         }
 
         window.onload = loadPreferences;
